@@ -178,54 +178,24 @@ setMethod(f="getVariance",signature=c("RhatModel.homo.normal.linear","data.frame
 # # Get transition matrix with no input data.
 setMethod(f="getEmissionDensity",
           signature=c("RhatModel.homo.normal.linear","data.frame","logical"),
-          definition=function(.Object, data, cumProb.threshold.Qhat =NA)
+          definition=function(.Object, data, zero.Flow, cumProb.threshold.Qhat =NA)
           {
-            # print('getEmissionDensity')
-            # browse()
             # Check Qhat is in data
             if (!any(names(data)=="Qhat.flow"))
               stop('Input "data" must be a a data frame with a variable named "Qhat.flow".')
-
-            # if (!any(names(data)=="Qhat.precipitation"))
-            #   stop('Input "data" must be a a data frame with a variable named "Qhat.precipitation".')
 
             # Get the moments
             markov.mean = getMean(.Object, data)
             markov.variance = getVariance(.Object, data)
             markov.stds <- sqrt(markov.variance)
 
-            # message(paste('markov.mean:',head(markov.mean),'markov.variance', head(markov.variance),'markov.stds', head(markov.stds)))
-
-            # print('markov.mean')
-            # print((markov.mean[9746:9750]))
-            # print('markov.variance')
-            # print(head(markov.variance))
-            # print('markov.stds')
-            # print((markov.stds[9746:9750]))
-
-            # message(paste('... number of Markov mean < 0. Number =',sum(markov.mean<0)))
-
-            # comment out for residual analysis because, we can have a negative mean..
-            # For truncated flow, the mean  must >=0 else very negative means can arise
-            # if (.Object@use.truncated.dist && any(markov.mean<0,na.rm = T) ) {
-            #   P = matrix(Inf, nrow(markov.mean), .Object@nStates)
-            #   # print('P1')
-            #   # print(head(P))
-            #
-            #   #markov.mean = pmax(0, markov.mean,na.rm = T)
-            # }
-
             # Calculate probabilities.
             P <- matrix(NA, nrow(data),.Object@nStates)
-            # print('P2')
-            # print(head(P))
+
             # Set the lower limit of a truncated normal dist.
             lowerX = -Inf;
             if (.Object@use.truncated.dist)
-              lowerX = -Inf;
-
-            # index to only run on observed C and Q, ignore gaps
-            # indC <- !is.na(data$C) & !is.na(data$flow)
+              lowerX = zero.Flow;
 
             # get the prob.
             if (!all(is.na(cumProb.threshold.Qhat))) { #are all of the values not equal to na?
@@ -234,23 +204,12 @@ setMethod(f="getEmissionDensity",
 
               for (i in 1:.Object@nStates) {
                 P[,i] = ptruncnorm(cumProb.threshold.Qhat[i], a=-Inf, mean=markov.mean[,i], sd=markov.stds[,i])
-                # print('ptruncnorm P[,i]')
-                # print(P[,i])
               }
             } else {
               for (i in 1:.Object@nStates) { # 'a' is the lower limit of the truncated normal distribution, making -Inf for residual analysis
                 P[,i] = dtruncnorm(data$Qhat.flow, a=-Inf, mean=markov.mean[,i], sd=markov.stds[,i])
-                # print("data$Qhat.C")
-                # print(head(data$Qhat.C))
-                # print('dtruncnorm P[,i]')
-                # print(P[,i][1:111])
-                # message(paste("data$Qhat.C[111]= ",data$Qhat.C[111]," lowerX= ",lowerX, "markov.mean[111]= ",markov.mean[111]," markov.stds[111]= ",markov.stds[111]))
-
               }
             }
-
-            # print("P")
-            # print(sum(P))
 
             return(P)
           }

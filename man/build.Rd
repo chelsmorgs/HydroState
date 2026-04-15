@@ -7,6 +7,7 @@
 build(
   input.data = data.frame(year = c(), flow = c(), precip = c()),
   data.transform = "boxcox",
+  data.transform.constant = 1,
   parameters = c("a0", "a1", "std"),
   seasonal.parameters = NULL,
   state.shift.parameters = c("a0", "std"),
@@ -18,7 +19,9 @@ build(
 \arguments{
 \item{input.data}{dataframe of annual, seasonal, or monthly runoff and precipitation observations. Gaps with missing data in either streamflow or precipitation are permitted. Monthly data is required when using \code{seasonal.parameters}.}
 
-\item{data.transform}{character sting with the method of transformation. The default is 'boxcox'. Other options: 'log', 'burbidge', 'none'}
+\item{data.transform}{character string with the method of transformation. The default is 'boxcox'. Other options: 'log', 'burbidge', 'none'}
+
+\item{data.transform.constant}{scalar numeric to allow the transform to handle zero flow. Default is 1.}
 
 \item{parameters}{character vector of parameters to construct model. Required and default: \code{a0}, \code{a1}, \code{std}. Auto-correlation terms optional: \code{AR1}, \code{AR2}, or \code{AR3}.}
 
@@ -87,6 +90,7 @@ model = build(input.data = streamflow_annual_221201)
 # 1-lag of auto-correlation, and state dependent parameters ('a1', 'std')
 model = build(input.data = streamflow_annual_221201,
                    data.transform = 'boxcox',
+                   data.transform.constant = 1,
                    parameters = c('a0','a1','std','AR1'),
                    state.shift.parameters = c('a1','std'),
                    error.distribution = 'normal',

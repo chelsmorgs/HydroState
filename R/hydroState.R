@@ -347,43 +347,23 @@ setMethod(f="getNegLogLikelihood",signature=c(.Object="hydroState",parameters='m
             # Get the transformed flow, Qhat
             data = getQhat(.Object@Qhat.object, .Object@input.data)
 
-            # Add Qhat to the input data
-            #data = cbind.data.frame(.Object@input.data,Qhat=Qhat)
+            # Get transformed value of zero flow
+            zero.Flow = get.zeroFlow(.Object@Qhat.object)
 
-            # Set-up to run for all periods with continuous observations of independent variable (precipitation)
-            # delta = getStartEndIndex(data)
+            # Get emission probs
+            emission.probs = getEmissionDensity(.Object@QhatModel.object, data, zero.Flow, NA)
 
-            # Get the markov likelihood and return. Importantly, the object QhatBar is passed so that
-            # the markov object can get the model estimates of the transformed flow mean, standard deviation etc.
-            # if(NROW(delta)>1){
+            if (all(is.na(emission.probs)) || max(emission.probs, na.rm=T)==0) {
+              return(Inf)
+            }
 
-              # Get the probabiity of the observed Qhat for each state at each time point.
-              # emission.probs = lapply(1:NROW(delta), function(i) getEmissionDensity(.Object@QhatModel.object, data[delta[i,1]:delta[i,2],], NA))
-
-                # if (all(is.na(unlist(emission.probs))) || max(unlist(emission.probs), na.rm=T)==0) {
-                #     return(Inf)
-                #   }
-
-                # nll <- lapply(1:NROW(delta), function(i) getLogLikelihood(.Object@markov.model.object, data[delta[i,1]:delta[i,2],], as.matrix(emission.probs[[i]],1:.Object@QhatModel.object@nStates)))
-                # nll <- sum(unlist(nll))
-              # }else{
-
-                emission.probs = getEmissionDensity(.Object@QhatModel.object, data, NA)
-
-                if (all(is.na(emission.probs)) || max(emission.probs, na.rm=T)==0) {
-                  return(Inf)
-                }
-
-                nll <- getLogLikelihood(.Object@markov.model.object, data, emission.probs)
-              # }
+            nll <- getLogLikelihood(.Object@markov.model.object, data, emission.probs)
 
             if (!is.finite(nll)) {
               return(Inf)
             } else {
               return( -nll)
             }
-
-
           }
 )
 
@@ -820,8 +800,11 @@ setMethod(f="viterbi",signature=c("hydroState","data.frame","logical","numeric",
               # Get transition probs.
               transProbs = getTransitionProbabilities(.Object@markov.model.object)
 
+              # Get transformed value of zero flow
+              zero.Flow = get.zeroFlow(.Object@Qhat.object)
+
               # get emiision probs.
-              emissionProbs = getEmissionDensity(.Object@QhatModel.object, data, NA)
+              emissionProbs = getEmissionDensity(.Object@QhatModel.object, data, zero.Flow, NA)
 
               # Get initial states
               startProbs = getInitialStateProbabilities(.Object@markov.model.object)
@@ -951,7 +934,8 @@ setMethod(f="viterbi",signature=c("hydroState","data.frame","logical","numeric",
               }
 
               # Get the conditional probabilities.
-              emissionProbs = getEmissionDensity(.Object@QhatModel.object, data, NA)
+              zero.Flow = get.zeroFlow(.Object@Qhat.object)
+              emissionProbs = getEmissionDensity(.Object@QhatModel.object, data, zero.Flow, NA)
               state.probs = getConditionalStateProbabilities(.Object@markov.model.object, data[filt,], emissionProbs[filt,])
 
               # Collate returned data.
@@ -1276,7 +1260,8 @@ setMethod(f="viterbi",signature=c("hydroState","data.frame","logical","numeric",
                 # Plot the conditional state probability for each state
 
                 # Get the conditional probabilities.
-                emissionProbs = getEmissionDensity(.Object@QhatModel.object, data, NA)
+                zero.Flow = get.zeroFlow(.Object@Qhat.object)
+                emissionProbs = getEmissionDensity(.Object@QhatModel.object, data, zero.Flow, NA)
                 state.probs = getConditionalStateProbabilities(.Object@markov.model.object, data[filt,], emissionProbs[filt,])
 
                 # Plot bar graph
@@ -1416,7 +1401,7 @@ setMethod(f="check.PseudoResiduals",signature="hydroState",definition=function(.
     n = nrow(data)
     data = getQhat(.Object@Qhat.object, .Object@input.data)
     Qhat <- data$Qhat.flow
-    # data = cbind.data.frame(.Object@input.data,Qhat)
+
     # get number of states
     nStates = getNumStates(.Object@markov.model.object)
 
@@ -1426,33 +1411,23 @@ setMethod(f="check.PseudoResiduals",signature="hydroState",definition=function(.
 
     # Get the markov likelihood and return. Importantly, the object QhatBar is passed so that
     # the markov object can get the model estimates of the transformed flow mean, standard deviation etc.
-    # if(NROW(delta)>1){
+    #----------
+    # get emission densities
+    zero.Flow = get.zeroFlow(.Object@Qhat.object)
+    emissionDensity <- getEmissionDensity(.Object@QhatModel.object, data, zero.Flow, NA)
+    emissionDensity[!filt,] <- NA
 
-      # Get the probabiity of the observed Qhat for each state at each time point.
-      # emissionDensity = lapply(1:NROW(delta), function(i) getEmissionDensity(.Object@QhatModel.object, data[delta[i,1]:delta[i,2],], NA))
-
-      # get emission densities
-      emissionDensity <- getEmissionDensity(.Object@QhatModel.object, data, NA)
-      emissionDensity[!filt,] <- NA
-      # emissionDensity = matrix(emissionDensity,NROW(data),ntates)
-
-      # Set the range in Qhat values at which to derive the conditional probs.
-      Qhat.increments = seq(floor(min(Qhat[filt])),ceiling(max(Qhat[filt])),length.out=100)
-
-
-    # Get the emmision cumulative prob (not density) at each Qhat.increments value at each tiem step
-    # cumProb.increments = array(NA, dim=c(n,nStates, length(Qhat.increments)))
-    # for (j in 1:length(Qhat.increments)) {
-    #   for (i in 1:NROW(delta)){
-    #     cumProb.increments[delta[i,1]:delta[i,2],,j] <- getEmissionDensity(.Object@QhatModel.object, data[delta[i,1]:delta[i,2],], cumProb.threshold.Qhat= rep(Qhat.increments[j], nrow(data[delta[i,1]:delta[i,2],])))
-    #       # getEmissionDensity(.Object@QhatModel.object, data, cumProb.threshold.Qhat= rep(Qhat.increments[j], nrow(data)))
-    #   }
-    # }
+    # Set the range in Qhat values at which to derive the conditional probs.
+    Qhat.increments = seq(floor(min(Qhat[filt])),ceiling(max(Qhat[filt])),length.out=100)
 
     # Get the emmision cumulative prob (not density) at each Qhat.increments value at each tiem step
     cumProb.increments = array(NA, dim=c(n,nStates, length(Qhat.increments)))
     for (j in 1:length(Qhat.increments)) {
-      cumProb.increments[,,j] <- getEmissionDensity(.Object@QhatModel.object, data, cumProb.threshold.Qhat= rep(Qhat.increments[j], nrow(data)))
+      cumProb.increments[,,j] <- getEmissionDensity(.Object@QhatModel.object,
+                                                    data,
+                                                    zero.Flow,
+                                                    cumProb.threshold.Qhat = rep(Qhat.increments[j], nrow(data))
+                                                    )
     }
 
     # # Get the emission cumulative probs and sort for each state.

@@ -102,29 +102,17 @@ get.seasons <- function(input.data=data.frame(year=c(), month = c(), flow=c(), p
   streamflow_monthly.seasonal = streamflow_monthly.seasonal[filt,]
   streamflow_monthly.seasonal = data.frame(year=streamflow_monthly.seasonal[,1], month=streamflow_monthly.seasonal[,2], flow=streamflow_monthly.seasonal[,3], precipitation=streamflow_monthly.seasonal[,4], nmonths=streamflow_monthly.seasonal[,5])
 
-  # Remove the first 5 years if precip to minimise AR1 spin up effects. THIS IS A TEMP FIX!!!
-  # filt = streamflow_monthly.seasonal$year <= (min(streamflow_monthly.seasonal$year)+4)
-  # streamflow_monthly.seasonal$flow[filt] = NA
-
   return(streamflow_monthly.seasonal)
 }
 
 #' @keywords internal
-select.transform <- function(func = 'boxcox', input.data=data.frame(year=c(), flow=c(), precip=c())){
+select.transform <- function(func = 'boxcox', input.data=data.frame(year=c(), flow=c(), precip=c()), data.transform.constant=1){
 
   #Validate
   func = paste('Qhat.',func,sep='')
   if(func %in% c('Qhat.none','Qhat.log','Qhat.burbidge','Qhat.boxcox')){
 
-    # # If monthly data, sort in ascending order by year and month
-    # if('month' %in% colnames(input.data)){
-    #   input.data = input.data[order(input.data[,'year'],input.data[,'month']),]
-    # }else if('day' %in% colnames(input.data)){
-    #   input.data = input.data[order(input.data[,'year'],input.data[,'month'],input.data[,'day']),]
-    # }
-
-
-    return(new(func, input.data))
+    return(new(func, input.data, constant = data.transform.constant))
 
   }else{
 
@@ -528,7 +516,8 @@ select.Markov <- function(flickering = FALSE,
 #'}
 #'
 #' @param input.data dataframe of annual, seasonal, or monthly runoff and precipitation observations. Gaps with missing data in either streamflow or precipitation are permitted. Monthly data is required when using \code{seasonal.parameters}.
-#' @param data.transform character sting with the method of transformation. The default is 'boxcox'. Other options: 'log', 'burbidge', 'none'
+#' @param data.transform character string with the method of transformation. The default is 'boxcox'. Other options: 'log', 'burbidge', 'none'
+#' @param data.transform.constant scalar numeric to allow the transform to handle zero flow. Default is 1.
 #' @param parameters character vector of parameters to construct model. Required and default: \code{a0}, \code{a1}, \code{std}. Auto-correlation terms optional: \code{AR1}, \code{AR2}, or \code{AR3}.
 #' @param seasonal.parameters character vector of one or all parameters (\code{a0}, \code{a1}, \code{std}) defined as a sinusoidal function to represent seasonal variation. Requires monthly or seasonal data. Default is empty, no seasonal parameters.
 #' @param state.shift.parameters character vector of one or all parameters (\code{a0}, \code{a1}, \code{std}, \code{AR1}, \code{AR2}, \code{AR3}) able to shift as dependent on state. Default is \code{a0} and \code{std}.
@@ -560,6 +549,7 @@ select.Markov <- function(flickering = FALSE,
 #' # 1-lag of auto-correlation, and state dependent parameters ('a1', 'std')
 #' model = build(input.data = streamflow_annual_221201,
 #'                    data.transform = 'boxcox',
+#'                    data.transform.constant = 1,
 #'                    parameters = c('a0','a1','std','AR1'),
 #'                    state.shift.parameters = c('a1','std'),
 #'                    error.distribution = 'normal',
@@ -571,6 +561,7 @@ select.Markov <- function(flickering = FALSE,
 
 build <- function(input.data = data.frame(year=c(), flow=c(), precip=c()),
                        data.transform = 'boxcox',
+                       data.transform.constant = 1,
                        parameters = c('a0','a1','std'),
                        seasonal.parameters = NULL,
                        state.shift.parameters = c('a0','std'),
@@ -610,9 +601,9 @@ build <- function(input.data = data.frame(year=c(), flow=c(), precip=c()),
 
   # default data.transform if NULL
   if(missing(data.transform)){
-    data.transform = select.transform(func = 'boxcox', input.data)
+    data.transform = select.transform(func = 'boxcox', input.data, data.transform.constant)
   }else{
-    data.transform = select.transform(data.transform, input.data)
+    data.transform = select.transform(data.transform, input.data, data.transform.constant)
   }
 
   # default state model error.distribution if NULL

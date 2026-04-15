@@ -96,8 +96,8 @@ setMethod(f="getDistributionPercentiles",
 # Get transition matrix with no input data.
 # @exportMethod getEmissionDensity
 setMethod(f="getEmissionDensity",
-          signature=c("QhatModel.homo.gamma.linear","data.frame"),
-          definition=function(.Object, data, cumProb.threshold.Qhat)
+          signature=c("QhatModel.homo.gamma.linear","data.frame", 'numeric'),
+          definition=function(.Object, data, zero.Flow, cumProb.threshold.Qhat)
           {
 
             # Check Qhat is in data
@@ -124,11 +124,11 @@ setMethod(f="getEmissionDensity",
             # Find non NAs
             filt <- !is.na(data$Qhat.flow)
 
-             # Initialise returned probs., P
+            # Initialise returned probs., P
             P <- matrix(NA, nrow(data),.Object@nStates)
 
             # Increase zero values to machine precision.
-            data$Qhat.flow[data$Qhat.flow==0] = sqrt(.Machine$double.eps)
+            data$Qhat.flow[data$Qhat.flow==zero.Flow] = sqrt(.Machine$double.eps)
 
             # Calculate probabilities.
             if (!all(is.na(cumProb.threshold.Qhat))) {

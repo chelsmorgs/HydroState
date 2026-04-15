@@ -84,8 +84,8 @@ setMethod(f="getDistributionPercentiles",
 
 # Get transition matrix with no input data.
 setMethod(f="getEmissionDensity",
-          signature=c("QhatModel.homo.skewedNormal.linear","data.frame"),
-          definition=function(.Object, data, cumProb.threshold.Qhat)
+          signature=c("QhatModel.homo.skewedNormal.linear","data.frame", 'numeric'),
+          definition=function(.Object, data, zero.Flow, cumProb.threshold.Qhat)
           {
 
             # Check Qhat is in data

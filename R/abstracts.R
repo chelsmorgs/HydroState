@@ -38,12 +38,16 @@ setMethod(f="getQhat",signature="Qhat",  definition=function(.Object, data){})
 setGeneric(name="getQ.backTransformed",def=function(.Object,data) {standardGeneric("getQ.backTransformed")})
 setMethod(f="getQ.backTransformed",signature="Qhat",  definition=function(.Object, data){})
 
+# @exportMethod get.zeroFlow
+setGeneric(name="get.zeroFlow",def=function(.Object) {standardGeneric("get.zeroFlow")})
+setMethod(f="get.zeroFlow",signature="Qhat",  definition=function(.Object){})
+
 QhatModel <- setClass("QhatModel", package='hydroState')
 
 
 # @exportMethod getEmissionDensity
-setGeneric(name="getEmissionDensity",def=function(.Object, data, cumProb.threshold.Qhat=NA) {standardGeneric("getEmissionDensity")})
-setMethod(f="getEmissionDensity",signature="QhatModel",  definition=function(.Object, data, cumProb.threshold.Qhat=NA){})
+setGeneric(name="getEmissionDensity",def=function(.Object, data, zero.Flow, cumProb.threshold.Qhat=NA) {standardGeneric("getEmissionDensity")})
+setMethod(f="getEmissionDensity",signature="QhatModel",  definition=function(.Object, data, zero.Flow, cumProb.threshold.Qhat=NA){})
 
 # @exportMethod getDistributionPercentiles
 setGeneric(name="getDistributionPercentiles",def=function(.Object, data, precentiles) {standardGeneric("getDistributionPercentiles")})

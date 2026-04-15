@@ -142,8 +142,8 @@ setMethod("get.SeaonalityPeriod","QhatModel.homo.normal.linear", function(.Objec
 # Get transition matrix with no input data.
 # @exportMethod getEmissionDensity
 setMethod(f="getEmissionDensity",
-          signature=c("QhatModel.homo.normal.linear","data.frame"),
-          definition=function(.Object, data, cumProb.threshold.Qhat)
+          signature=c("QhatModel.homo.normal.linear","data.frame", 'numeric'),
+          definition=function(.Object, data, zero.Flow, cumProb.threshold.Qhat)
           {
 
             # Check Qhat is in data
@@ -161,7 +161,6 @@ setMethod(f="getEmissionDensity",
             # For truncated flow, the mean  must >=0 else very negative means can arise
             if (.Object@use.truncated.dist && any(markov.mean<0,na.rm = T) ) {
                 P = matrix(Inf, nrow(markov.mean), .Object@nStates)
-                #markov.mean = pmax(0, markov.mean,na.rm = T)
             }
 
             # Calculate probabilities.
@@ -170,7 +169,7 @@ setMethod(f="getEmissionDensity",
             # Set the lower limit of a truncated normal dist.
             lowerX = -Inf;
             if (.Object@use.truncated.dist)
-              lowerX = 0;
+              lowerX = zero.Flow;
 
             # get the prob.
             if (!all(is.na(cumProb.threshold.Qhat))) {
