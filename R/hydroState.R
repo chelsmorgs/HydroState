@@ -1693,6 +1693,19 @@ setMethod(f="drought.resilience.index",signature="hydroState",definition=functio
 }
 )
 
+# @exportMethod forecast_state
+setGeneric(name="forecast_state",def=function(.Object, t) {standardGeneric("forecast_state")})
+setMethod(f="forecast_state",signature="hydroState",definition=function(.Object, t)
+{
+
+  # Use Sina's work on state forecasting
+
+  # Step 1. Get obs data
+
+  # Step 2. Emission probs
+}
+)
+
 # @exportMethod forecast
 setGeneric(name="forecast",def=function(.Object, t) {standardGeneric("forecast")})
 setMethod(f="forecast",signature="hydroState",definition=function(.Object, t)
