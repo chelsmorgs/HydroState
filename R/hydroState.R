@@ -664,9 +664,9 @@ setMethod(f="plot_graph",signature="hydroState",definition=function(.Object, mai
 )
 
 # @exportMethod viterbiF\
-setGeneric(name="viterbi",def=function(.Object, data, do.plot=NA, plot.percentiles=NA, plot.yearRange=NA, plot.options=NA) {standardGeneric("viterbi")})
+setGeneric(name="viterbi", def=function(.Object, data, do.plot=NA, plot.percentiles=NA, plot.yearRange=NA, plot.options=NA, reference.state='Normal') {standardGeneric("viterbi")})
 setMethod(f="viterbi",signature=c("hydroState","missing","missing","missing","missing","missing"),
-          definition=function(.Object, data, do.plot=T, plot.percentiles = c(0.05, 0.5, 0.95), plot.yearRange=numeric(),plot.options = c("A","B","C","D"))
+          definition=function(.Object, data, do.plot=T, plot.percentiles = c(0.05, 0.5, 0.95), plot.yearRange=numeric(),plot.options = c("A","B","C","D"), reference.state='Normal')
 {
 
   if (!validObject(.Object))
@@ -677,7 +677,7 @@ setMethod(f="viterbi",signature=c("hydroState","missing","missing","missing","mi
   # data = cbind.data.frame(.Object@input.data,Qhat)
 
   # Run the viterbi algorithm
-  states <- viterbi(.Object, data, do.plot=T, plot.percentiles = c(0.05, 0.5, 0.95), plot.yearRange, plot.options)
+  states <- viterbi(.Object, data, do.plot=T, plot.percentiles = c(0.05, 0.5, 0.95), plot.yearRange, plot.options, reference.state)
   return(states)
 }
 )
@@ -692,12 +692,12 @@ setMethod(f="viterbi",signature=c("hydroState","missing","logical","missing","mi
             data = getQhat(.Object@Qhat.object, .Object@input.data)
 
             # Run the viterbi algorithm
-            states <- viterbi(.Object, data, do.plot, c(0.05, 0.5, 0.95), numeric(),plot.options)
+            states <- viterbi(.Object, data, do.plot, c(0.05, 0.5, 0.95), numeric(),plot.options, reference.state)
             return(states)
           }
 )
 setMethod(f="viterbi",signature=c("hydroState","missing","logical","numeric","numeric","character"),
-          definition=function(.Object, data, do.plot=T, plot.percentiles = c(0.05, 0.5, 0.95), plot.yearRange=numeric(),plot.options = c("A","B","C","D"))
+          definition=function(.Object, data, do.plot=T, plot.percentiles = c(0.05, 0.5, 0.95), plot.yearRange=numeric(),plot.options = c("A","B","C","D"), reference.state='Normal')
 {
   if (!validObject(.Object))
     stop('The model parameters produced an INVALID MODEL.')
@@ -707,7 +707,7 @@ setMethod(f="viterbi",signature=c("hydroState","missing","logical","numeric","nu
   # data = cbind.data.frame(.Object@input.data,Qhat)
 
   # Run the viterbi algorithm
-  states <- viterbi(.Object, data, do.plot, plot.percentiles, plot.yearRange,plot.options)
+  states <- viterbi(.Object, data, do.plot, plot.percentiles, plot.yearRange,plot.options, reference.state)
   return(states)
 }
 )
@@ -728,7 +728,7 @@ setMethod(f="viterbi",signature=c("hydroState","missing","logical","missing","mi
           }
 )
 setMethod(f="viterbi",signature=c("hydroState","missing","logical","numeric","numeric","missing"),
-          definition=function(.Object, data, do.plot=T, plot.percentiles = c(0.05, 0.5, 0.95), plot.yearRange=numeric(),plot.options = c("A","B","C","D"))
+          definition=function(.Object, data, do.plot=T, plot.percentiles = c(0.05, 0.5, 0.95), plot.yearRange=numeric(),plot.options = c("A","B","C","D"), reference.state='Normal')
           {
             if (!validObject(.Object))
               stop('The model parameters produced an INVALID MODEL.')
@@ -738,14 +738,14 @@ setMethod(f="viterbi",signature=c("hydroState","missing","logical","numeric","nu
             # data = cbind.data.frame(.Object@input.data,Qhat)
 
             # Run the viterbi algorithm
-            states <- viterbi(.Object, data, do.plot, plot.percentiles, plot.yearRange,plot.options)
+            states <- viterbi(.Object, data, do.plot, plot.percentiles, plot.yearRange,plot.options, reference.state)
             return(states)
           }
 )
 
 
 setMethod(f="viterbi",signature=c("hydroState","data.frame","logical","numeric","numeric","character"),
-          definition=function(.Object, data, do.plot=T, plot.percentiles = c(0.05, 0.5, 0.95), plot.yearRange=numeric(),plot.options = c())
+            definition=function(.Object, data, do.plot=T, plot.percentiles = c(0.05, 0.5, 0.95), plot.yearRange=numeric(),plot.options = c())
           {
 
             if (!validObject(.Object))
@@ -949,7 +949,7 @@ setMethod(f="viterbi",signature=c("hydroState","data.frame","logical","numeric",
                 results[filt, (10+nStates):(10+2*nStates-1)] = t(emissionProbs[filt,])
                 colnames(results) <- c('Year','Viterbi State Number', 'Obs. flow',
                                        paste('Viterbi Flow -',plot.percentiles*100,'%ile',sep=''),
-                                       paste('Normal State Flow-',plot.percentiles*100,'%ile',sep=''),
+                                       paste(reference.state.colname, '-', plot.percentiles*100, '%ile', sep=''),
                                        paste('Conditional Prob.-',.Object@state.labels,sep=''),
                                        paste('Emission Density-',.Object@state.labels,sep=''))
               } else {
@@ -962,7 +962,7 @@ setMethod(f="viterbi",signature=c("hydroState","data.frame","logical","numeric",
                 results[filt, (11+nStates):(11+2*nStates-1)] = t(emissionProbs[filt,])
                 colnames(results) <- c('Year','Month','Viterbi State Number', 'Obs. flow',
                                        paste('Viterbi Flow -',plot.percentiles*100,'%ile',sep=''),
-                                       paste('Normal State Flow -',plot.percentiles*100,'%ile',sep=''),
+                                       paste(reference.state.colname, ' -',plot.percentiles*100,'%ile',sep=''),
                                        paste('Conditional Prob.-',.Object@state.labels,sep=''),
                                        paste('Emission Density-',.Object@state.labels,sep=''))
               }
@@ -1013,6 +1013,31 @@ setMethod(f="viterbi",signature=c("hydroState","data.frame","logical","numeric",
                 }
 
               }
+              # Colour and legend text for the counterfactual series,
+              # generalized to whichever reference.state was requested.
+              # Previously hardcoded to state.colours.all[3] (the 'Normal'
+              # colour slot) and the literal text 'Est. normal'.
+              reference.state.colour <- state.colours[ind.stateNames.normal]
+              reference.state.legend.label <- if (length(.Object@state.labels) == nStates && .Object@state.labels[ind.stateNames.normal] != '') {
+                paste('Est.', tolower(.Object@state.labels[ind.stateNames.normal]))
+              } else {
+                paste('Est. state', ind.stateNames.normal)
+              }
+
+              # Build legend vectors explicitly sized to 1 + nStates + 1
+              # entries (Obs. flow, one per state, counterfactual).
+              # Previously fixed-length-4 vectors (c(NA,21,21,1) etc),
+              # which only works for 2-state models -- for 3+ states R's
+              # legend() silently recycles them, mismatching colours against
+              # the wrong labels. Built here (before any panel-specific
+              # block) so panels B and C can each be requested independently
+              # via plot.options without hitting an undefined variable error.
+              legend.labels <- c('Obs. flow', paste(.Object@state.labels,' (5th - 50th - 95th)',sep=''),
+                                 paste(reference.state.legend.label,' (5th - 50th - 95th)',sep=''))
+              legend.pch    <- c(NA, rep(21, nStates), 1)
+              legend.lty    <- rep(1, length(legend.labels))
+              legend.col    <- c('grey', state.colours, reference.state.colour)
+              legend.ptbg   <- c(NA, state.colours, NA)
 
               # Derive a matrix for the start and end of each bar for the plotting of the range in the percentiles
               line.matrix <- cbind(viterbi.est[,1], viterbi.est[,3])
@@ -1127,8 +1152,8 @@ setMethod(f="viterbi",signature=c("hydroState","data.frame","logical","numeric",
 
                   # Plot the normal flow in years when the Viterbi state is not normal.
                   if (!ind.flow.normal[i]) {
-                    points(obsDates.asISO[i], flow.normal.est[i,2],col=state.colours.all[3], bg=state.colours.all[3], pch=1)
-                    lines(rep(obsDates.asISO[i],2), c(flow.normal.est[i,1],flow.normal.est[i,3]),col=state.colours.all[3], lwd=1, lty=1)
+                    points(obsDates.asISO[i], flow.normal.est[i,2],col=reference.state.colour, bg=reference.state.colour, pch=1)
+                    lines(rep(obsDates.asISO[i],2), c(flow.normal.est[i,1],flow.normal.est[i,3]),reference.state.colour, lwd=1, lty=1)
                   }
                 }
 
@@ -1147,13 +1172,14 @@ setMethod(f="viterbi",signature=c("hydroState","data.frame","logical","numeric",
                 grid(NA,NULL)
 
                 if(tail(plot.options, n=1) =="B"){
-                  legend('topleft', legend=c('Obs. flow',paste(.Object@state.labels,' (5th - 50th - 95th)',sep=''),'Est. normal (5th - 50th - 95th)'),
-                         lty=c(1,1,1,1),lwd=1,pch=c(NA,21,21,1), col=c('grey',state.colours,state.colours.all[3]),
-                         pt.bg=c(NA,state.colours,NA), xjust=0, cex=1.3, bg='transparent')
-                }else{
-                  legend('topleft', legend=c('Obs. flow',paste(.Object@state.labels,' (5th - 50th - 95th)',sep=''),'Est. normal (5th - 50th - 95th)'),
-                         lty=c(1,1,1,1),lwd=1,pch=c(NA,21,21,1), col=c('grey',state.colours,state.colours.all[3]),
-                         pt.bg=c(NA,state.colours,NA), xjust=0, cex=1.1, bg='transparent')
+                  legend('topleft', legend=legend.labels,
+                         lty=legend.lty,lwd=1,pch=legend.pch, col=legend.col,
+                         pt.bg=legend.ptbg, xjust=0, cex=1.3, bg='transparent')
+                }
+                else{
+                  legend('topleft', legend=legend.labels,
+                         lty=legend.lty,lwd=1,pch=legend.pch, col=legend.col,
+                         pt.bg=legend.ptbg, xjust=0, cex=1.1, bg='transparent')
                 }
 
                 plot.range=par("usr")
@@ -1693,24 +1719,283 @@ setMethod(f="drought.resilience.index",signature="hydroState",definition=functio
 }
 )
 
+
+
 # @exportMethod forecast_state
-setGeneric(name="forecast_state",def=function(.Object, t) {standardGeneric("forecast_state")})
-setMethod(f="forecast_state",signature="hydroState",definition=function(.Object, t)
-{
+#
+# Predict future state probabilities and the predictive flow distribution for H time steps ahead,
+# using the fitted HMM transition matrix and emission densities.
+#
+# Method: For the forward-filtered state probability at the last observed time step is propagated
+# H steps into future by repeated multiplication by the transition matrix.
+# At each future time step h, the predictive flow PDF is the mixture of per-state emission
+# densities weighted by the projected state probabilities.
+# The PDF is evaluated on a grid of Qhat values spanning the observed range, back-transformed to
+# real flow units, and normalised so the area under each curve equals 1.
+#
+# Note on Precipitation: The emission density depends on precipitation as a co-variate (via getMean()).
+# Since future precipitation is unknown, the median observed precipitation from the training data is
+# used as a fixed representative value.
+# This is a deliberate simplifying assumption -- see the Predict Feature scoping discussion for how
+# Monte Carlo re-sampling of historical precipitation could replace this in future.
+#
+# Note on AR Models: For AR1/AR2/AR3 emission models, getMean() depends on lagged Qhat values.
+# The grid evaluation uses the median observed Qhat as the lagged value for all grid points, which is
+# a reasonable approximation for a marginal predictive density.
+#
+# @param .Object a fitted hydroState object with state.labels.set.
+# @param t a positive integer: the number of future time steps to predict.
+# @return a data.frame with columns:
+#   flow: the back-transformed flow grid values (real units, mm/year, or mm/month)
+#   t_plus_1, t_plus_2, ... , t_plus_H: the predictive PDF value at each future time step
+#     on the flow scale, normalised to integrate to 1.
+#   Also carries attributes 'state.probs.pred' (H x nStates matrix of predicted state probabilities)
+#   and 'reference.precipitation' (the median precipitation value used for the emission density grid).
 
-  # Use Sina's work on state forecasting
 
-  # Step 1. Get obs data
+setGeneric(name = "predictFlow", def = function(.Object, t) {standardGeneric("predictFlow")})
+setMethod(f = "predictFlow", signature = "hydroState", definition = function(.Object, t) {
 
-  # Step 2. Emission probs
+
+# -----------------------------------------------------------------------
+# Input Validation
+# -----------------------------------------------------------------------
+if (!validObject(.Object))
+  stop("The model parameters produced as INVALID MODEL.")
+
+nStates <- getNumStates(.Object@markov.model.object)
+
+if (nStates == 1)
+  stop("predictFlow() requires a multi-state model (nStates >=2).",
+       "A 1-state model has no state transitions to project forward.")
+
+if (missing(t))
+  stop("Please provide prediction horizon t, e.g., predictFlow(model, t=6).")
+
+if (!is.numeric(t)||length(t)!=1||t<=0||!is.finite(t))
+  stop("'t' must be a single positive finite number (the number of future
+       timesteps to predict.")
+
+H <- as.integer(t)
+
+
+# -----------------------------------------------------------------------
+# Get transformed training data from the fitted model
+# -----------------------------------------------------------------------
+data2 <- getQhat(.Object@Qhat.object, .Object@input.data)
+
+# Only keep time steps with valid (non-NA) flow observations, matching how getNegLogLikelihood
+# filters data before running the forward algorithm.
+filt <- is.finite(data2$Qhat.flow) & is.finite(data2$Qhat.precipitation)
+data2 <- data2[filt, , drop = FALSE]
+
+if (nrow(data2)==0)
+  stop("No valid (non-NA) observations found in the fitted model's input data.")
+
+Qhat.obs <- data2$Qhat.flow
+n <- nrow(data2)
+
+
+# --------------------------------------------------------------------------------------------
+# Get emission densities for training data (used to run forward filter over observed history.)
+# --------------------------------------------------------------------------------------------
+# For AR1/AR2/AR3 models, getMean() uses .Object@QhatModel.object@precip.delta which was built
+# at fit time from the full (unfiltered) input.data.
+# After filtering to only valid rows, the stored precip.delta.indices no longer match the
+# filtered data2 row count, causing a subscript out-of-bounds error.
+# We rebuild precip.delta from data2 before calling getEmissionDensity.
+
+QhatModel.training <- .Object@QhatModel.object
+
+if (is(QhatModel.training, "QhatModel.homo.normal.linear.AR1")||
+   is(QhatModel.training, "QhatModel.homo.normal.linear.AR2")||
+   is(QhatModel.training, "QhatModel.homo.normal.linear.AR3")) {
+  getStartEndIndex <- getFromNamespace("getStartEndIndex", "hydroState")
+  QhatModel.training@precip.delta <- getStartEndIndex(data2)
 }
-)
 
-# @exportMethod forecast
-setGeneric(name="forecast",def=function(.Object, t) {standardGeneric("forecast")})
-setMethod(f="forecast",signature="hydroState",definition=function(.Object, t)
-  {
+emissionProbs <- getEmissionDensity(QhatModel.training, data2, NA)
+
+if (is.null(dim(emissionProbs)))
+  emissionProbs <- matrix(emissionProbs, ncol = 1)
 
 
+# --------------------------------------------------------------------------------------------
+# Forward filter over the observed training series
+# --------------------------------------------------------------------------------------------
+# Mirrors the scaled forward algorithm in getLogLikelihood(), but we only need the filtered
+# distribution at the final time step T.
+
+alpha <- getInitialStateProbabilities(.Object)
+Tprob <- getTransitionProbabilities(.Object)
+
+foo <- alpha * as.vector(emissionProbs[1, ])
+foo <- pmax(foo, 0.0001)     # Guard against exact zero
+foo <- foo / sum(foo)
+
+if (n > 1){
+  for (i in 2:n){
+    foo <- (foo %*% Tprob) * as.vector(emissionProbs[i, ])
+    foo <- pmax(as.vector(foo), 0.0001)
+    foo <- foo / sum(foo)
   }
+}
+
+last.state.prob <- as.vector(foo)
+
+
+
+# --------------------------------------------------------------------------------------------
+# Project State Probabilities H Steps Forward
+# P(S_{T+h}) = P(S_T) * Gamma^h
+# --------------------------------------------------------------------------------------------
+
+state.probs.pred <- matrix(NA, nrow = H, ncol = nStates)
+
+if (length(.Object@state.labels) == nStates && all(Object@state.labels !='')){
+  colnames(state.probs.pred) <- .Object@state.labels
+} else {
+  colnames(state.probs.pred) <- paste0("State_", seq_len(nStates))
+}
+rownames(state.probs.pred) <- paste0("t+", seq_len(H))
+
+foo.pred <- last.state.prob
+for (h in seq_len(H)){
+  foo.pred <- as.vector(foo.pred %*% Tprob)
+  foo.pred <- pmax(foo.pred, 0.0001)
+  foo.pred <- foo.pred / sum(foo.pred)
+  state.probs.pred[h, ] <- foo.pred
+}
+
+
+# --------------------------------------------------------------------------------------------
+# Build a Qhat grid spanning the observed range for emission density evaluation
+# --------------------------------------------------------------------------------------------
+Qhat.grid <- seq(
+  floor(min(Qhat.obs, na.rm = TRUE)),
+  ceiling(max(Qhat.obs, na.rm = TRUE)),
+  length.out = 1000
 )
+
+# Use the median observed precipitation as a fixed representative covariate value
+# (future precipitation is unknown).
+# The median is more robust than the mean for skewed precipitation distributions.
+
+precip.median <- median(data2$Qhat.precipitation, na.rm = TRUE)
+Qhat.median <- median(Qhat.obs, na.rm = TRUE)
+
+
+
+# Build the grid data frame: Replicate a representative training row and overwrite
+# Qhat.flow and Qhat.precipitation with fixed values, then sweep Qhat.flow across the grid.
+# This ensures all the columns required by getMean()/getEmissionDensity() are present.
+
+representative.row <- data2[which.min(abs(data2$Qhat.precipitation - precip.median))[1],]
+grid.data <- representative.row[rep(1, length(Qhat.grid)), ]
+grid.data$Qhat.flow <- Qhat.grid
+grid.data$Qhat.precipitation <- precip.median
+rownames(grid.data) <- NULL
+
+
+
+# Per-state emission densities on the Qhat grid.
+# For AR1/AR2/AR3 emission models, getMean() uses the fitted model's stored precip.delta
+# gap index (build from the original training data), which breaks when passed a synthetic
+# 1000-row grid.
+# We rebuild precip.delta for the grid size so getMean doesn't index out of bounds.
+
+QhatModel.for.grid <- .Object@QhatModel.object
+if (is(QhatModel.for.grid, "QhatModel.homo.normal.linear.AR1")||
+    is(QhatModel.for.grid, "QhatModel.homo.normal.linear.AR2")||
+    is(QhatModel.for.grid, "QhatModel.homo.normal.linear.AR3")){
+      QhatModel.for.grid@precip.delta <- data.frame(
+        start.index = 1L, end.index = nrow(grid.data))
+    }
+
+state.pdf <- getEmissionDensity(QhatModel.for.grid, grid.data, NA)
+
+if (is.null(dim(state.pdf)))
+  state.pdf <- matrix(state.pdf, ncol=1)
+
+state.pdf[!is.finite(state.pdf)|state.pdf<0]<-0
+
+
+
+# --------------------------------------------------------------------------------------------
+# Predict PDF at each Future Timestep h:
+# p(Q_{T+h})=sum_k P(S_{T+h}=k)*f_k(Q)
+# --------------------------------------------------------------------------------------------
+
+pdf.matrix.qhat <- matrix(NA, nrow = length(Qhat.grid), ncol = H)
+
+for (h in seq_len(H)){
+  pdf.matrix.qhat[, h] <- as.vector(state.pdf %*% state.probs.pred[h, ])
+}
+
+
+colnames(pdf.matrix.qhat) <- paste0("t_plus", seq_len(H))
+
+# --------------------------------------------------------------------------------------------
+# Back transform What grid to real flow units
+# --------------------------------------------------------------------------------------------
+
+bt.input <- grid.data
+bt.input$Qhat.flow <- Qhat.grid
+
+flow.grid <- getQ.backTransformed(.Object@Qhat.object, bt.input)$flow.modelled
+
+# Sort by flow (back-transform can be non-monotone for some Qhat types)
+ord <- order(flow.grid)
+flow.grid <- flow.grid[ord]
+Qhat.ordered <- Qhat.grid[ord]
+pdf.matrix.qhat <- pdf.matrix.qhat[ord, , drop = FALSE]
+
+# Remove any duplicate flow values (can arise at the truncation boundary)
+dup <- duplicated(flow.grid)
+flow.grid <- flow.grid[!dup]
+Qhat.ordered <- Qhat.ordered[!dup]
+pdf.matrix.qhat <- pdf.matrix.qhat[!dup, , drop = FALSE]
+
+
+
+# --------------------------------------------------------------------------------------------
+# Convert density from Qhat scale to flow scale via the Jacobian
+# |dQhat/dFlow| so that the integral of p(flow) dflow = 1
+# --------------------------------------------------------------------------------------------
+
+n.grid <- length(flow.grid)
+dQhat <- c(diff(Qhat.ordered), tail(diff(Qhat.ordered), 1))
+dFlow <- c(diff(flow.grid), tail(diff(flow.grid), 1))
+dFlow <- ifelse(abs(dFlow) < .Machine$double.eps, NA, dFlow)
+
+jacobian <- abs(dQhat / dFlow)
+jacobian[!is.finite(jacobian)] <- 0
+
+pdf.matrix.flow <- sweep(pdf.matrix.qhat, 1, jacobian, "*")
+pdf.matrix.flow[!is.finite(pdf.matrix.flow) | pdf.matrix.flow < 0] <- 0
+
+
+
+# --------------------------------------------------------------------------------------------
+# Normalise each PDF so it integrates to 1 over the flow axis (trapezoidal rule)
+# --------------------------------------------------------------------------------------------
+
+for (h in seq_len(H)){
+  y <- pdf.matrix.flow[, h]
+  area <- sum(diff(flow.grid) * (head(y, -1) + tail(y, -1)) /2, na.rm = TRUE)
+
+  if (is.finite(area) && area > 0)
+    pdf.matrix.flow[, h] <- y / area
+}
+
+# --------------------------------------------------------------------------------------------
+# Assemble and return the output data.frame
+# --------------------------------------------------------------------------------------------
+
+out <- data.frame(flow = flow.grid, pdf.matrix.flow)
+colnames(out)[-1] <- paste0("t_plus", seq_len(H))
+
+attr(out, "state.probs.pred") <- state.probs.pred
+attr(out, "reference.precipitation") <- precip.median
+
+})
