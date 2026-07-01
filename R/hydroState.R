@@ -1459,7 +1459,7 @@ setMethod(f="check.PseudoResiduals",signature="hydroState",definition=function(.
   # use of the Viterbi state to determine which value to take in the conditional
   # distribtion.
 
-    # Gte Qhat and add to input.data
+    # Get Qhat and add to input.data
     data  = .Object@input.data
     n = nrow(data)
     data = getQhat(.Object@Qhat.object, .Object@input.data)
@@ -1829,7 +1829,7 @@ if (nrow(data2)==0)
 
 Qhat.obs <- data2$Qhat.flow
 n <- nrow(data2)
-
+zero.Flow <- get.zeroFlow(.Object@Qhat.object)
 
 # --------------------------------------------------------------------------------------------
 # Get emission densities for training data (used to run forward filter over observed history.)
@@ -1849,7 +1849,7 @@ if (is(QhatModel.training, "QhatModel.homo.normal.linear.AR1")||
   QhatModel.training@precip.delta <- getStartEndIndex(data2)
 }
 
-emissionProbs <- getEmissionDensity(QhatModel.training, data2, NA)
+emissionProbs <- getEmissionDensity(QhatModel.training, data2, zero.Flow, NA)
 
 if (is.null(dim(emissionProbs)))
   emissionProbs <- matrix(emissionProbs, ncol = 1)
@@ -1887,7 +1887,7 @@ last.state.prob <- as.vector(foo)
 
 state.probs.pred <- matrix(NA, nrow = H, ncol = nStates)
 
-if (length(.Object@state.labels) == nStates && all(Object@state.labels !='')){
+if (length(.Object@state.labels) == nStates && all(.Object@state.labels !='')){
   colnames(state.probs.pred) <- .Object@state.labels
 } else {
   colnames(state.probs.pred) <- paste0("State_", seq_len(nStates))
@@ -1947,7 +1947,7 @@ if (is(QhatModel.for.grid, "QhatModel.homo.normal.linear.AR1")||
         start.index = 1L, end.index = nrow(grid.data))
     }
 
-state.pdf <- getEmissionDensity(QhatModel.for.grid, grid.data, NA)
+state.pdf <- getEmissionDensity(QhatModel.for.grid, grid.data, zero.Flow, NA)
 
 if (is.null(dim(state.pdf)))
   state.pdf <- matrix(state.pdf, ncol=1)
