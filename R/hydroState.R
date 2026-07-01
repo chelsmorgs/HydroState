@@ -663,7 +663,7 @@ setMethod(f="plot_graph",signature="hydroState",definition=function(.Object, mai
 }
 )
 
-# @exportMethod viterbiF\
+#' @exportMethod viterbi
 setGeneric(name="viterbi", def=function(.Object, data, do.plot=NA, plot.percentiles=NA, plot.yearRange=NA, plot.options=NA, reference.state='Normal') {standardGeneric("viterbi")})
 setMethod(f="viterbi",signature=c("hydroState","missing","missing","missing","missing","missing"),
           definition=function(.Object, data, do.plot=T, plot.percentiles = c(0.05, 0.5, 0.95), plot.yearRange=numeric(),plot.options = c("A","B","C","D"), reference.state='Normal')
@@ -682,7 +682,7 @@ setMethod(f="viterbi",signature=c("hydroState","missing","missing","missing","mi
 }
 )
 setMethod(f="viterbi",signature=c("hydroState","missing","logical","missing","missing","character"),
-          definition=function(.Object, data, do.plot, plot.percentiles, plot.yearRange, plot.options)
+          definition=function(.Object, data, do.plot, plot.percentiles, plot.yearRange, plot.options, reference.state='Normal')
           {
 
             if (!validObject(.Object))
@@ -713,7 +713,7 @@ setMethod(f="viterbi",signature=c("hydroState","missing","logical","numeric","nu
 )
 
 setMethod(f="viterbi",signature=c("hydroState","missing","logical","missing","missing","missing"),
-          definition=function(.Object, data, do.plot, plot.percentiles, plot.yearRange, plot.options)
+          definition=function(.Object, data, do.plot, plot.percentiles, plot.yearRange, plot.options, reference.state='Normal')
           {
 
             if (!validObject(.Object))
@@ -723,7 +723,7 @@ setMethod(f="viterbi",signature=c("hydroState","missing","logical","missing","mi
             data = getQhat(.Object@Qhat.object, .Object@input.data)
 
             # Run the viterbi algorithm
-            states <- viterbi(.Object, data, do.plot, c(0.05, 0.5, 0.95), numeric())
+            states <- viterbi(.Object, data, do.plot, c(0.05, 0.5, 0.95), numeric(), plot.options=c("A","B","C","D"), reference.state = reference.state)
             return(states)
           }
 )
@@ -745,7 +745,7 @@ setMethod(f="viterbi",signature=c("hydroState","missing","logical","numeric","nu
 
 
 setMethod(f="viterbi",signature=c("hydroState","data.frame","logical","numeric","numeric","character"),
-            definition=function(.Object, data, do.plot=T, plot.percentiles = c(0.05, 0.5, 0.95), plot.yearRange=numeric(),plot.options = c())
+            definition=function(.Object, data, do.plot=T, plot.percentiles = c(0.05, 0.5, 0.95), plot.yearRange=numeric(),plot.options = c(), reference.state='Normal')
           {
 
             if (!validObject(.Object))
@@ -897,8 +897,45 @@ setMethod(f="viterbi",signature=c("hydroState","data.frame","logical","numeric",
                 state.est[[i]] <- as.matrix(state.est[[i]][filt,], ncol=nStates)
               }
 
-              # Keep the state.ext for the 'Normal' flow state.
-              ind.stateNames.normal <- which(.Object@state.labels=='Normal')
+              # Resolve reference.state (default 'Normal', preserving prior
+              # behaviour exactly) to a state index. Accepts either a
+              # character label matching .Object@state.labels, or a numeric
+              # state index directly -- this generalizes what was
+              # previously hardcoded to the 'Normal' label only.
+              if (is.character(reference.state)) {
+                if (length(reference.state) != 1)
+                  stop('"reference.state" must be a single character label or a single state index.')
+                ind.stateNames.normal <- which(.Object@state.labels == reference.state)
+                if (length(ind.stateNames.normal) == 0)
+                  stop(paste('"reference.state" = "', reference.state, '" does not match any entry of .Object@state.labels: ',
+                             paste(.Object@state.labels, collapse = ', '), sep = ''))
+                if (length(ind.stateNames.normal) > 1)
+                  stop(paste('"reference.state" = "', reference.state, '" matches more than one state label (duplicate labels). Pass a numeric state index instead.', sep = ''))
+              } else if (is.numeric(reference.state)) {
+                if (length(reference.state) != 1 || reference.state < 1 || reference.state > nStates || reference.state != round(reference.state))
+                  stop(paste('"reference.state" must be a single integer between 1 and', nStates))
+                ind.stateNames.normal <- reference.state
+              } else {
+                stop('"reference.state" must be either a character state label or a numeric state index.')
+              }
+
+              # Build the column-name label for the counterfactual series.
+              # Preserves the EXACT original column text ('Normal State
+              # Flow') when reference.state is the default 'Normal', for
+              # backwards compatibility with any code parsing these names.
+              # Otherwise uses a generic, accurate label reflecting the
+              # actual reference state requested.
+              if (identical(reference.state, 'Normal')) {
+                reference.state.colname <- 'Normal State Flow'
+              } else if (length(.Object@state.labels) == nStates && !is.na(.Object@state.labels[ind.stateNames.normal]) && .Object@state.labels[ind.stateNames.normal] != '') {
+                reference.state.colname <- paste(.Object@state.labels[ind.stateNames.normal], 'State Flow', sep=' ')
+              } else {
+                reference.state.colname <- paste('State', ind.stateNames.normal, 'Flow', sep=' ')
+              }
+
+              # Keep the state.est for the reference flow state (the
+              # counterfactual: "what would flow have been had the
+              # catchment remained in / never left this state").
               state.est.normal <- matrix(0, nQhat,3)
               for (i in 1:3) {
                 for (j in 1:nQhat) {
@@ -1153,7 +1190,7 @@ setMethod(f="viterbi",signature=c("hydroState","data.frame","logical","numeric",
                   # Plot the normal flow in years when the Viterbi state is not normal.
                   if (!ind.flow.normal[i]) {
                     points(obsDates.asISO[i], flow.normal.est[i,2],col=reference.state.colour, bg=reference.state.colour, pch=1)
-                    lines(rep(obsDates.asISO[i],2), c(flow.normal.est[i,1],flow.normal.est[i,3]),reference.state.colour, lwd=1, lty=1)
+                    lines(rep(obsDates.asISO[i],2), c(flow.normal.est[i,1],flow.normal.est[i,3]),col=reference.state.colour, lwd=1, lty=1)
                   }
                 }
 
@@ -1721,8 +1758,9 @@ setMethod(f="drought.resilience.index",signature="hydroState",definition=functio
 
 
 
-# @exportMethod forecast_state
-#
+#' @exportMethod predictFlow
+setGeneric(name = "predictFlow", def = function(.Object, t) {standardGeneric("predictFlow")})
+
 # Predict future state probabilities and the predictive flow distribution for H time steps ahead,
 # using the fitted HMM transition matrix and emission densities.
 #
@@ -1751,9 +1789,6 @@ setMethod(f="drought.resilience.index",signature="hydroState",definition=functio
 #     on the flow scale, normalised to integrate to 1.
 #   Also carries attributes 'state.probs.pred' (H x nStates matrix of predicted state probabilities)
 #   and 'reference.precipitation' (the median precipitation value used for the emission density grid).
-
-
-setGeneric(name = "predictFlow", def = function(.Object, t) {standardGeneric("predictFlow")})
 setMethod(f = "predictFlow", signature = "hydroState", definition = function(.Object, t) {
 
 
