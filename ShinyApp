@@ -1,0 +1,786 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  HydroState — R Shiny Backend
+#  Victorian Catchment Runoff State Assessment
+#
+#  Authors:   Chelsea Morgan & Caitlin Weatherburn
+#  Supervisor: A/Prof Tim Peterson, Monash University
+#
+#  Dependencies:
+#    devtools::install_github("peterson-tim-j/HydroState")
+#    install.packages(c("shiny","dplyr","lubridate","readr","ggplot2",
+#                       "plotly","scales","DT","zoo","tidyr"))
+#
+#  Publishing:
+#    rsconnect::deployApp()
+#    Then replace SHINY_URL_HERE in hydrostate_main.html with the live URL.
+#
+#  HydroState workflow (Peterson et al. 2021):
+#    1. build()        — construct model object
+#    2. fit.hydroState() — fit HMM to data
+#    3. get.states()   — extract state classifications + probabilities
+#    4. plot()         — diagnostics and state timeline
+# ═══════════════════════════════════════════════════════════════════════════════
+
+library(shiny)
+library(dplyr)
+library(lubridate)
+library(readr)
+library(ggplot2)
+library(plotly)
+library(scales)
+library(DT)
+library(zoo)
+library(tidyr)
+
+# Try loading hydroState — degrade gracefully if unavailable
+HS_OK <- tryCatch({ library(hydroState); TRUE }, error = function(e) FALSE)
+
+# ── Shared plot theme (matches website palette) ───────────────────────────────
+SCOLS <- c(Normal="#27ae60", Low="#e67e22", "Very Low"="#c0392b")
+
+PT <- theme_minimal(base_size = 13) +
+  theme(
+    plot.background  = element_rect(fill="white", color=NA),
+    panel.background = element_rect(fill="#f7f8f9", color=NA),
+    panel.grid.major = element_line(color="#e2e6ea", linewidth=0.5),
+    panel.grid.minor = element_blank(),
+    axis.text        = element_text(color="#566573", size=11),
+    axis.title       = element_text(color="#2c3e50", size=12, face="bold"),
+    plot.title       = element_text(color="#2c3e50", size=14, face="bold"),
+    plot.subtitle    = element_text(color="#7f8c8d", size=11),
+    legend.position  = "bottom",
+    legend.title     = element_blank(),
+    strip.background = element_rect(fill="#e8f5f5"),
+    strip.text       = element_text(color="#2a7f7f", face="bold")
+  )
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  UI
+# ═══════════════════════════════════════════════════════════════════════════════
+ui <- fluidPage(
+  tags$head(
+    tags$style(HTML("
+      body { margin:0; padding:0; font-family:'Segoe UI',system-ui,sans-serif;
+             background:#fff; color:#2c3e50; }
+      .well { background:#f7f8f9; border:1px solid #e2e6ea; border-radius:8px; }
+      .sec-head { color:#2a7f7f; font-weight:700; font-size:12px;
+                  text-transform:uppercase; letter-spacing:0.8px;
+                  border-bottom:2px solid #e8f5f5; padding-bottom:5px;
+                  margin:16px 0 10px; }
+      .btn-run { background:#2a7f7f!important; color:#fff!important;
+                 border:none!important; border-radius:8px!important;
+                 font-weight:600!important; width:100%;
+                 padding:10px!important; font-size:14px!important; }
+      .btn-run:hover { background:#3aa8a8!important; }
+      .info-strip { background:#eaf4fb; border-left:4px solid #2980b9;
+                    border-radius:0 8px 8px 0; padding:9px 13px;
+                    font-size:12px; color:#1a5276; margin:8px 0; }
+      .warn-strip { background:#fef9e7; border-left:4px solid #f39c12;
+                    border-radius:0 8px 8px 0; padding:9px 13px;
+                    font-size:12px; color:#7d6608; margin:8px 0; }
+      .ok-strip   { background:#eafaf1; border-left:4px solid #27ae60;
+                    border-radius:0 8px 8px 0; padding:9px 13px;
+                    font-size:12px; color:#1e8449; margin:8px 0; }
+      .rc { background:white; border:1px solid #e2e6ea; border-radius:8px;
+            padding:16px; margin-bottom:16px;
+            box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+      .mv { font-size:26px; font-weight:800; color:#2a7f7f; line-height:1.1; }
+      .ml { font-size:11px; color:#7f8c8d; margin-top:2px; }
+      .sb { display:inline-block; padding:3px 11px; border-radius:16px;
+            font-weight:700; font-size:13px; }
+      .sn { background:#e8f8f0; color:#27ae60; }
+      .sl { background:#fef3e6; color:#e67e22; }
+      .sv { background:#fdecea; color:#c0392b; }
+      .su { background:#f0f2f4; color:#7f8c8d; }
+      hr.s { border:none; border-top:1px solid #e2e6ea; margin:14px 0; }
+      .nav-tabs>li>a { color:#2a7f7f!important; }
+      .nav-tabs>li.active>a { font-weight:700!important; }
+      .demo-banner { background:#fff3cd; border:1px solid #ffc107;
+                     border-radius:8px; padding:10px 14px; font-size:12px;
+                     color:#856404; margin-bottom:12px; }
+    "))
+  ),
+
+  # Top bar
+  div(style="background:#2a7f7f;color:white;padding:11px 20px;
+             display:flex;align-items:center;gap:10px;",
+    tags$strong(style="font-size:15px;", "⚡ HydroState Analysis Engine"),
+    tags$span(style="font-size:11px;opacity:0.8;margin-left:auto;",
+      if (HS_OK) "✓ hydroState loaded" else "⚠ Demo mode — hydroState not found")
+  ),
+
+  fluidRow(style="margin:0;",
+
+    # ── LEFT: inputs ──────────────────────────────────────────────────────────
+    column(3, style="padding:14px;background:#f7f8f9;
+                     min-height:calc(100vh - 44px);
+                     border-right:1px solid #e2e6ea;",
+
+      if (!HS_OK) div(class="demo-banner",
+        "⚠ hydroState package not found. Install with:",
+        tags$br(),
+        tags$code('devtools::install_github("peterson-tim-j/HydroState")'),
+        tags$br(), "Analysis will run in statistical approximation mode."
+      ),
+
+      # 1. Streamflow upload
+      div(class="sec-head", "1 · Streamflow Data"),
+      fileInput("flow_csv", NULL, accept=".csv",
+        buttonLabel="📂 Choose CSV",
+        placeholder="date, runoff_mm, precip_mm"),
+      div(class="info-strip",
+        "Required columns: ", tags$strong("date"), " and ",
+        tags$strong("runoff_mm"), " and ", tags$strong("precip_mm"),
+        ". Monthly or annual timestep. Gaps are permitted."
+      ),
+
+      # 2. Timestep
+      div(class="sec-head", "2 · Data Timestep"),
+      selectInput("timestep", NULL,
+        choices=c("Annual"="annual","Seasonal"="seasonal","Monthly"="monthly"),
+        selected="annual"),
+      helpText(style="font-size:11px;",
+        "Match the timestep of your uploaded data. ",
+        "Annual = one row per water year. ",
+        "See the hydroState vignettes for seasonal/monthly format."),
+
+      # 3. Model settings
+      div(class="sec-head", "3 · Model Settings"),
+
+      selectInput("n_states", "Number of states",
+        choices=c(
+          "Auto-select via AIC (build.all)" = "auto",
+          "1 state"  = "1",
+          "2 states" = "2",
+          "3 states" = "3"
+        ), selected="auto"),
+
+      selectInput("data_transform", "Streamflow transform",
+        choices=c(
+          "Box-Cox (recommended)" = "boxcox",
+          "Log"                   = "log",
+          "Burbidge"              = "burbidge",
+          "None"                  = "none"
+        ), selected="boxcox"),
+
+      selectInput("error_dist", "Error distribution",
+        choices=c(
+          "Truncated normal" = "truc.normal",
+          "Normal"           = "normal",
+          "Gamma"            = "gamma"
+        ), selected="truc.normal"),
+
+      selectInput("autocorr", "Auto-correlation",
+        choices=c(
+          "None" = "none",
+          "AR1"  = "AR1",
+          "AR2"  = "AR2",
+          "AR3"  = "AR3"
+        ), selected="none"),
+
+      selectInput("state_param", "State-dependent parameter",
+        choices=c(
+          "Intercept"         = "intercept",
+          "Slope"             = "slope",
+          "Std. deviation"    = "sd",
+          "Auto-correlation"  = "AR"
+        ), selected="intercept"),
+
+      selectInput("drought_ref", "Drought reference period",
+        choices=c(
+          "Millennium Drought (1997–2010)" = "millennium",
+          "Custom"                          = "custom"
+        )),
+      conditionalPanel("input.drought_ref == 'custom'",
+        fluidRow(
+          column(6, numericInput("d_start","Start",1997,min=1950,max=2020)),
+          column(6, numericInput("d_end",  "End",  2010,min=1960,max=2023))
+        )
+      ),
+
+      selectInput("proj_yrs","Projection horizon",
+        choices=c("10 years"=10,"20 years"=20,"30 years"=30), selected=30),
+      numericInput("n_mc","Monte Carlo realisations",
+        value=200, min=50, max=1000, step=50),
+
+      hr(class="s"),
+      actionButton("run_btn","▶  Run HydroState Analysis", class="btn-run"),
+      hr(class="s"),
+
+      conditionalPanel("output.results_ready",
+        downloadButton("dl_csv","⬇ Download results CSV",
+          style="width:100%;border-radius:8px;border:1px solid #2a7f7f;
+                 color:#2a7f7f;background:white;font-weight:600;padding:8px;")
+      )
+    ),
+
+    # ── RIGHT: outputs ────────────────────────────────────────────────────────
+    column(9, style="padding:14px;",
+
+      uiOutput("status_ui"),
+
+      conditionalPanel("output.results_ready",
+        uiOutput("metrics_row"),
+        hr(class="s"),
+        tabsetPanel(id="tabs",
+
+          # Tab 1 — State classification
+          tabPanel("State Classification",
+            div(class="rc",
+              div(style="font-weight:700;font-size:13px;margin-bottom:8px;",
+                "Normal-state probability over time (from get.states())"),
+              plotlyOutput("state_plot", height="300px"),
+              div(class="info-strip", style="margin-top:10px;",
+                "Derived from ", tags$code("get.states()"), ". ",
+                "Values below 0.5 indicate a likely Low runoff state. ",
+                "Shaded region = drought reference period."
+              )
+            ),
+            div(class="rc",
+              div(style="font-weight:700;font-size:13px;margin-bottom:8px;",
+                "Observed annual runoff with state overlay"),
+              plotlyOutput("runoff_plot", height="260px")
+            )
+          ),
+
+          # Tab 2 — Rainfall–Runoff scatter
+          tabPanel("Rainfall–Runoff",
+            div(class="rc",
+              div(style="font-weight:700;font-size:13px;margin-bottom:8px;",
+                "Annual precipitation vs. runoff — coloured by period"),
+              plotlyOutput("rr_plot", height="380px"),
+              div(class="info-strip", style="margin-top:10px;",
+                "A downward shift in post-drought points relative to the pre-drought trend ",
+                "indicates a change in the rainfall–runoff relationship. ",
+                "Adapted from Peterson et al. (2021) Figure 1."
+              )
+            )
+          ),
+
+          # Tab 3 — Projections
+          tabPanel("Flow Projections",
+            div(class="rc",
+              div(style="font-weight:700;font-size:13px;margin-bottom:8px;",
+                "Probabilistic annual runoff projection — three state scenarios"),
+              plotlyOutput("proj_plot", height="380px"),
+              div(class="info-strip", style="margin-top:10px;",
+                "Shaded: 10th–90th percentile across Monte Carlo realisations. ",
+                "Normal = recovery assumed. Low / Very Low = persistence assumed."
+              )
+            )
+          ),
+
+          # Tab 4 — Diagnostics
+          tabPanel("Model Diagnostics",
+            div(class="rc",
+              div(style="font-weight:700;font-size:13px;margin-bottom:8px;",
+                "Pseudo-residual diagnostics (from plot.hydroState())"),
+              div(class="warn-strip",
+                "ℹ Residuals should be approximately normally distributed, uniform, ",
+                "with minimal autocorrelation and trend. Poor fit suggests trying a ",
+                "different transform or error distribution."
+              ),
+              uiOutput("diag_ui")
+            ),
+            div(class="rc",
+              div(style="font-weight:700;font-size:13px;margin-bottom:8px;",
+                "AIC comparison across fitted models"),
+              plotlyOutput("aic_plot", height="240px")
+            )
+          ),
+
+          # Tab 5 — Data table
+          tabPanel("Data Table",
+            div(class="rc", DTOutput("res_table"))
+          )
+        )
+      ),
+
+      # Placeholder
+      conditionalPanel("!output.results_ready",
+        div(style="text-align:center;padding:60px 20px;color:#7f8c8d;",
+          div(style="font-size:48px;margin-bottom:14px;","📊"),
+          div(style="font-size:17px;font-weight:600;margin-bottom:8px;",
+            "Ready to analyse"),
+          div(style="font-size:13px;max-width:380px;margin:0 auto;line-height:1.6;",
+            "Upload a CSV with runoff and precipitation, configure the settings ",
+            "on the left, then click Run HydroState Analysis.")
+        )
+      )
+    )
+  )
+)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  SERVER
+# ═══════════════════════════════════════════════════════════════════════════════
+server <- function(input, output, session) {
+
+  rv       <- reactiveVal(NULL)   # stores all results
+  log_msgs <- reactiveVal(character(0))
+
+  output$results_ready <- reactive(!is.null(rv()))
+  outputOptions(output, "results_ready", suspendWhenHidden=FALSE)
+
+  # ── Status strip ─────────────────────────────────────────────────────────────
+  output$status_ui <- renderUI({
+    msgs <- log_msgs()
+    if (!length(msgs)) return(NULL)
+    last <- tail(msgs, 1)
+    cls  <- if (grepl("^ERROR|^⚠", last)) "warn-strip"
+            else if (grepl("^✓", last))   "ok-strip"
+            else                           "info-strip"
+    div(class=cls, last)
+  })
+
+  # ── Parse uploaded CSV ────────────────────────────────────────────────────
+  parsed_data <- reactive({
+    req(input$flow_csv)
+    tryCatch({
+      df <- read_csv(input$flow_csv$datapath, show_col_types=FALSE)
+      names(df) <- tolower(trimws(gsub("\\s+","_",names(df))))
+
+      # Flexible column matching
+      date_col   <- names(df)[grepl("date|time|year",   names(df))][1]
+      runoff_col <- names(df)[grepl("runoff|flow|q_mm|streamflow", names(df))][1]
+      precip_col <- names(df)[grepl("precip|rainfall|rain|p_mm",  names(df))][1]
+
+      if (is.na(date_col) || is.na(runoff_col))
+        stop("Could not find 'date' and 'runoff_mm' columns. Check CSV format.")
+
+      df <- df %>%
+        rename(date=all_of(date_col), runoff_mm=all_of(runoff_col)) %>%
+        mutate(
+          date      = parse_date_time(date,
+                        orders=c("Y","ymd","dmy","mdy","Ym","dmY"), quiet=TRUE),
+          runoff_mm = suppressWarnings(as.numeric(runoff_mm))
+        ) %>%
+        filter(!is.na(date), !is.na(runoff_mm), runoff_mm >= 0) %>%
+        arrange(date)
+
+      # Precipitation column
+      if (!is.na(precip_col)) {
+        df <- df %>%
+          rename(precip_mm=all_of(precip_col)) %>%
+          mutate(precip_mm=suppressWarnings(as.numeric(precip_mm)))
+      } else {
+        df$precip_mm <- NA_real_
+        log_msgs(c(log_msgs(),
+          "⚠ No precipitation column found — hydroState requires both runoff and precipitation. Please include a 'precip_mm' column for full HMM analysis."))
+      }
+
+      df <- df %>% mutate(
+        year       = year(date),
+        water_year = if_else(month(date) >= 3, year, year - 1)
+      )
+
+      log_msgs(c(log_msgs(),
+        paste0("✓ Loaded ", nrow(df), " records (",
+               min(df$water_year), "–", max(df$water_year), ").")))
+      df
+    }, error=function(e) {
+      log_msgs(c(log_msgs(), paste0("ERROR: ", e$message)))
+      NULL
+    })
+  })
+
+  # ── Annual aggregation ────────────────────────────────────────────────────
+  annual_df <- reactive({
+    req(parsed_data())
+    parsed_data() %>%
+      group_by(water_year) %>%
+      summarise(
+        runoff_mm  = sum(runoff_mm,  na.rm=TRUE),
+        precip_mm  = sum(precip_mm,  na.rm=TRUE),
+        n_obs      = n(),
+        .groups    = "drop"
+      ) %>%
+      filter(n_obs >= 10) %>%   # require near-complete years
+      rename(year=water_year)
+  })
+
+  # ── Drought period labels ─────────────────────────────────────────────────
+  dy <- reactive({
+    if (input$drought_ref=="millennium") c(1997,2010)
+    else c(input$drought_start, input$drought_end)
+  })
+
+  period_label <- function(yr, d) {
+    case_when(yr <= d[1] ~ "Pre-drought",
+              yr <= d[2] ~ "Drought",
+              TRUE        ~ "Post-drought")
+  }
+
+  # ── RUN ANALYSIS ──────────────────────────────────────────────────────────
+  observeEvent(input$run_btn, {
+    req(annual_df())
+    log_msgs(character(0))
+    rv(NULL)
+
+    withProgress(message="Running HydroState…", value=0, {
+
+      ann <- annual_df()
+      d   <- dy()
+
+      # Check we have precipitation
+      has_precip <- !all(is.na(ann$precip_mm))
+
+      # ── Prepare hydroState input dataframe ─────────────────────────────────
+      # hydroState expects columns named exactly as per the package:
+      # year (or date), runoff, precipitation
+      hs_input <- data.frame(
+        year          = ann$year,
+        runoff        = ann$runoff_mm,
+        precipitation = if (has_precip) ann$precip_mm else rep(mean(ann$runoff_mm)*3, nrow(ann))
+      )
+
+      incProgress(0.1, detail="Data prepared")
+
+      # ── hydroState analysis ────────────────────────────────────────────────
+      fitted_models <- list()
+      states_df     <- NULL
+      aic_table     <- NULL
+      hmm_label     <- "Statistical approximation"
+
+      if (HS_OK && has_precip) {
+        tryCatch({
+          log_msgs(c(log_msgs(), "Building hydroState models…"))
+
+          if (input$n_states == "auto") {
+            # ── build.all(): constructs all model combinations ────────────────
+            # Returns a list of hydroState model objects
+            all_models <- build.all(
+              data            = hs_input,
+              data.transform  = input$data_transform,
+              error.distribution = input$error_dist
+            )
+            log_msgs(c(log_msgs(),
+              paste0("✓ Built ", length(all_models), " model variants.")))
+
+            incProgress(0.25, detail="Fitting all models…")
+
+            # fit.hydroState() fits each model; returns updated model object
+            fitted_models <- lapply(seq_along(all_models), function(i) {
+              tryCatch(fit.hydroState(all_models[[i]]), error=function(e) NULL)
+            })
+            fitted_models <- Filter(Negate(is.null), fitted_models)
+
+            # AIC comparison — select lowest
+            aics <- sapply(fitted_models, function(m) {
+              tryCatch(m@AIC, error=function(e) Inf)
+            })
+            best_idx   <- which.min(aics)
+            best_model <- fitted_models[[best_idx]]
+
+            aic_table <- data.frame(
+              Model = paste0("Model ", seq_along(aics)),
+              AIC   = round(aics, 2),
+              Best  = seq_along(aics) == best_idx
+            ) %>% arrange(AIC)
+
+            hmm_label <- paste0(best_model@transition.graph,
+                                "-state HMM (AIC=", round(min(aics),1), ")")
+
+          } else {
+            # ── build(): single specified model ───────────────────────────────
+            n_st  <- as.integer(input$n_states)
+            tg    <- if (n_st == 1) matrix(c(1), nrow=1)
+                     else if (n_st == 2) matrix(c(1,1,1,1), nrow=2)
+                     else matrix(rep(1,9), nrow=3)
+
+            mdl <- build(
+              data               = hs_input,
+              data.transform     = input$data_transform,
+              parameters         = if (input$autocorr=="none") character(0) else input$autocorr,
+              state.shift.parameters = input$state_param,
+              error.distribution = input$error_dist,
+              transition.graph   = tg
+            )
+
+            incProgress(0.3, detail="Fitting model…")
+            best_model <- fit.hydroState(mdl)
+            hmm_label  <- paste0(n_st, "-state HMM")
+            aic_table  <- data.frame(Model="Single model",
+                                     AIC=round(best_model@AIC,2), Best=TRUE)
+          }
+
+          incProgress(0.55, detail="Extracting states…")
+
+          # ── get.states(): extract state classifications ───────────────────
+          # Returns a dataframe with columns:
+          #   year (or time), state, state.probability, lower.CI, upper.CI,
+          #   and conditional probabilities per state
+          raw_states <- get.states(best_model)
+
+          # Harmonise column names (package may vary slightly)
+          names(raw_states) <- tolower(gsub("\\.", "_", names(raw_states)))
+
+          # Map numeric state to label
+          n_modelled <- best_model@transition.graph %>% nrow()
+          state_labs <- if (n_modelled == 1) c("Normal")
+                        else if (n_modelled == 2) c("Normal","Low")
+                        else c("Normal","Low","Very Low")
+
+          states_df <- raw_states %>%
+            mutate(
+              year       = ann$year,
+              runoff_mm  = ann$runoff_mm,
+              precip_mm  = if (has_precip) ann$precip_mm else NA_real_,
+              Period     = period_label(year, d),
+              State      = state_labs[pmin(state, length(state_labs))],
+              Prob_Normal = if ("state_probability" %in% names(.)) state_probability
+                            else if ("prob_1" %in% names(.)) prob_1
+                            else 1 - as.numeric(state > 1)
+            )
+
+          log_msgs(c(log_msgs(),
+            paste0("✓ HMM complete. Best model: ", hmm_label)))
+
+        }, error=function(e) {
+          log_msgs(c(log_msgs(),
+            paste0("⚠ hydroState error: ", e$message,
+                   ". Falling back to statistical approximation.")))
+        })
+      } else if (!has_precip) {
+        log_msgs(c(log_msgs(),
+          "⚠ Precipitation data required for hydroState HMM. Using statistical approximation."))
+      }
+
+      # ── Statistical fallback (no hydroState or error) ─────────────────────
+      if (is.null(states_df)) {
+        pre_mean  <- mean(ann$runoff_mm[period_label(ann$year,d)=="Pre-drought"], na.rm=TRUE)
+        pre_sd    <- sd(ann$runoff_mm[period_label(ann$year,d)=="Pre-drought"],   na.rm=TRUE)
+        roll3     <- zoo::rollmean(ann$runoff_mm, k=3, fill=NA, align="right")
+
+        states_df <- ann %>%
+          mutate(
+            Period     = period_label(year, d),
+            Z          = (roll3 - pre_mean) / pre_sd,
+            State      = case_when(
+              is.na(Z) | Z > -0.5 ~ "Normal",
+              Z > -1.2             ~ "Low",
+              TRUE                  ~ "Very Low"
+            ),
+            Prob_Normal = pmin(pmax(pnorm(coalesce(Z,0) + 0.5), 0.05), 0.95)
+          )
+      }
+
+      incProgress(0.75, detail="Generating projections…")
+
+      # ── Monte Carlo projections ────────────────────────────────────────────
+      pre_mu  <- mean(states_df$runoff_mm[states_df$Period=="Pre-drought"],  na.rm=TRUE)
+      pre_sd  <- sd(states_df$runoff_mm[states_df$Period=="Pre-drought"],    na.rm=TRUE)
+      post_mu <- mean(states_df$runoff_mm[states_df$Period=="Post-drought"], na.rm=TRUE)
+      post_sd <- sd(states_df$runoff_mm[states_df$Period=="Post-drought"],   na.rm=TRUE)
+      if (is.na(post_mu)) { post_mu <- pre_mu * 0.68; post_sd <- pre_sd }
+
+      n_proj <- as.integer(input$proj_yrs)
+      n_mc   <- input$n_mc
+      last_yr<- max(states_df$year)
+
+      proj <- bind_rows(lapply(
+        list(Normal=list(mu=pre_mu, sd=pre_sd),
+             Low   =list(mu=post_mu, sd=post_sd),
+             `Very Low`=list(mu=post_mu*0.75, sd=post_sd*0.8)),
+        function(sc, nm) {
+          mat <- matrix(pmax(rnorm(n_mc*n_proj, sc$mu, sc$sd), 0), nrow=n_proj)
+          data.frame(
+            year     = seq(last_yr+1, last_yr+n_proj),
+            Scenario = nm,
+            p10 = apply(mat,1,quantile,0.10),
+            p25 = apply(mat,1,quantile,0.25),
+            p50 = apply(mat,1,quantile,0.50),
+            p75 = apply(mat,1,quantile,0.75),
+            p90 = apply(mat,1,quantile,0.90)
+          )
+        }, nm=names(list(Normal=NULL,Low=NULL,`Very Low`=NULL))
+      ))
+
+      incProgress(0.9, detail="Packaging results…")
+
+      # ── Summary stats ──────────────────────────────────────────────────────
+      post_rows <- states_df[states_df$Period=="Post-drought",]
+      cur_state <- if (nrow(post_rows)>0) tail(post_rows$State,1) else "Unknown"
+      shift_pct <- if (nrow(post_rows)>0 && !is.na(pre_mu) && pre_mu>0)
+        round((1 - mean(post_rows$runoff_mm,na.rm=TRUE)/pre_mu)*100, 1) else NA
+
+      log_msgs(c(log_msgs(),
+        paste0("✓ Analysis complete. Current state: ", cur_state,
+          if (!is.na(shift_pct)) paste0(". Runoff reduction: ", shift_pct, "%.") else "."
+        )
+      ))
+
+      rv(list(
+        states    = states_df,
+        proj      = proj,
+        aic_tbl   = aic_table,
+        cur_state = cur_state,
+        shift_pct = shift_pct,
+        pre_mu    = pre_mu,
+        post_mu   = post_mu,
+        hmm_label = hmm_label,
+        n_yrs     = nrow(states_df),
+        d         = d
+      ))
+
+      incProgress(1)
+    })
+  })
+
+  # ── Metrics row ──────────────────────────────────────────────────────────────
+  output$metrics_row <- renderUI({
+    r <- rv(); req(r)
+    bc <- switch(r$cur_state, Normal="sn", Low="sl", "Very Low"="sv", "su")
+    fluidRow(
+      column(3, div(class="rc", style="text-align:center;",
+        div(class=paste("sb",bc), r$cur_state),
+        div(class="ml","Current runoff state"))),
+      column(3, div(class="rc", style="text-align:center;",
+        div(class="mv", if(!is.na(r$shift_pct)) paste0(r$shift_pct,"%") else "—"),
+        div(class="ml","Post-drought runoff reduction"))),
+      column(3, div(class="rc", style="text-align:center;",
+        div(class="mv", r$n_yrs),
+        div(class="ml","Years of record analysed"))),
+      column(3, div(class="rc", style="text-align:center;",
+        div(style="font-size:13px;font-weight:700;color:#2a7f7f;", r$hmm_label),
+        div(class="ml","Model fitted")))
+    )
+  })
+
+  # ── Plot: State probability ──────────────────────────────────────────────────
+  output$state_plot <- renderPlotly({
+    r <- rv(); req(r); df <- r$states; d <- r$d
+    p <- ggplot(df, aes(x=year)) +
+      annotate("rect", xmin=d[1], xmax=d[2], ymin=-Inf, ymax=Inf,
+               fill="#fef9e7", alpha=0.7) +
+      annotate("text", x=mean(d), y=0.97, label="Drought\nperiod",
+               size=3, color="#d35400", vjust=1, fontface="italic") +
+      geom_hline(yintercept=0.5, linetype="dashed", color="#aaa", linewidth=0.6) +
+      geom_ribbon(aes(ymin=pmax(Prob_Normal-0.1,0), ymax=pmin(Prob_Normal+0.1,1)),
+                  fill="#2a7f7f", alpha=0.12) +
+      geom_line(aes(y=Prob_Normal), color="#2a7f7f", linewidth=1.1) +
+      geom_point(aes(y=Prob_Normal, color=State,
+                     text=paste0("Year: ",year,"<br>P(Normal): ",
+                                 round(Prob_Normal,2),"<br>State: ",State)),
+                 size=2.5) +
+      scale_color_manual(values=SCOLS, drop=FALSE) +
+      scale_y_continuous(labels=percent_format(), limits=c(0,1)) +
+      labs(x="Water Year", y="P(Normal runoff state)",
+           title="Normal-State Probability  ·  get.states()") + PT
+    ggplotly(p, tooltip="text") %>%
+      layout(legend=list(orientation="h",y=-0.18))
+  })
+
+  # ── Plot: Runoff with state overlay ─────────────────────────────────────────
+  output$runoff_plot <- renderPlotly({
+    r <- rv(); req(r); df <- r$states; d <- r$d
+    p <- ggplot(df, aes(x=year,y=runoff_mm,color=State,
+                        text=paste0("Year: ",year,"<br>Runoff: ",
+                                    round(runoff_mm,1)," mm<br>State: ",State))) +
+      annotate("rect", xmin=d[1], xmax=d[2], ymin=-Inf, ymax=Inf,
+               fill="#fef9e7", alpha=0.6) +
+      geom_line(color="#bdc3c7", linewidth=0.8) +
+      geom_point(size=3) +
+      scale_color_manual(values=SCOLS, drop=FALSE) +
+      labs(x="Water Year", y="Annual Runoff (mm)",
+           title="Annual Runoff — State Overlay") + PT
+    ggplotly(p, tooltip="text") %>%
+      layout(legend=list(orientation="h",y=-0.18))
+  })
+
+  # ── Plot: Rainfall–Runoff scatter ────────────────────────────────────────────
+  output$rr_plot <- renderPlotly({
+    r <- rv(); req(r); df <- r$states; d <- r$d
+    req(!all(is.na(df$precip_mm)))
+    p <- ggplot(df, aes(x=precip_mm, y=runoff_mm, color=Period,
+                        text=paste0("Year: ",year,
+                                    "<br>Precip: ",round(precip_mm,1)," mm",
+                                    "<br>Runoff: ",round(runoff_mm,1)," mm",
+                                    "<br>Period: ",Period))) +
+      geom_smooth(data=filter(df,Period=="Pre-drought"),
+                  method="lm", se=TRUE, color="#2a7f7f", fill="#e8f5f5",
+                  linetype="dashed", linewidth=0.9) +
+      geom_point(size=3.5, alpha=0.85) +
+      scale_color_manual(values=c("Pre-drought"="#2a7f7f",
+                                   "Drought"="#e67e22",
+                                   "Post-drought"="#c0392b")) +
+      labs(x="Annual Precipitation (mm)", y="Annual Runoff (mm)",
+           title="Rainfall–Runoff Relationship by Period",
+           subtitle="Dashed = pre-drought trend. Post-drought shift below trend = non-recovery.") + PT
+    ggplotly(p, tooltip="text") %>%
+      layout(legend=list(orientation="h",y=-0.18))
+  })
+
+  # ── Plot: Projections ────────────────────────────────────────────────────────
+  output$proj_plot <- renderPlotly({
+    r <- rv(); req(r)
+    obs_tail <- tail(r$states, 5) %>% select(year, runoff_mm)
+    sc_cols  <- c(Normal="#27ae60", Low="#e67e22", "Very Low"="#c0392b")
+    p <- ggplot(r$proj, aes(x=year, group=Scenario)) +
+      geom_ribbon(aes(ymin=p10,ymax=p90,fill=Scenario), alpha=0.13) +
+      geom_ribbon(aes(ymin=p25,ymax=p75,fill=Scenario), alpha=0.22) +
+      geom_line(aes(y=p50,color=Scenario), linewidth=1.2) +
+      geom_point(data=obs_tail,aes(x=year,y=runoff_mm,
+                   text=paste0("Observed: ",round(runoff_mm,1)," mm")),
+                 color="#2c3e50",size=2.5,inherit.aes=FALSE) +
+      geom_line(data=obs_tail,aes(x=year,y=runoff_mm),
+                color="#2c3e50",linewidth=0.8,linetype="dashed",inherit.aes=FALSE) +
+      scale_fill_manual(values=sc_cols) +
+      scale_color_manual(values=sc_cols) +
+      labs(x="Water Year", y="Annual Runoff (mm)",
+           title="Probabilistic Annual Runoff Projection",
+           subtitle="Shaded: p10–p90 | Line: median | Dots: observed") + PT
+    ggplotly(p) %>% layout(legend=list(orientation="h",y=-0.18))
+  })
+
+  # ── Diagnostics UI ────────────────────────────────────────────────────────
+  output$diag_ui <- renderUI({
+    r <- rv(); req(r)
+    if (HS_OK) {
+      div(class="info-strip",
+        "Run ", tags$code("plot(best_model)"), " in RStudio to view full ",
+        "pseudo-residual diagnostics (time series, ACF, histogram, Q-Q plot). ",
+        "These plots are generated natively by the hydroState package and ",
+        "are best reviewed in your local R environment."
+      )
+    } else {
+      div(class="warn-strip",
+        "Diagnostics require the hydroState package. Install and run locally for ",
+        "full residual plots via ", tags$code("plot.hydroState()"), "."
+      )
+    }
+  })
+
+  # ── AIC plot ─────────────────────────────────────────────────────────────────
+  output$aic_plot <- renderPlotly({
+    r <- rv(); req(r); req(r$aic_tbl)
+    df <- r$aic_tbl %>% arrange(AIC) %>% mutate(Model=factor(Model,levels=Model))
+    p  <- ggplot(df, aes(x=Model, y=AIC, fill=Best,
+                         text=paste0(Model,"<br>AIC: ",AIC))) +
+      geom_col(width=0.6) +
+      scale_fill_manual(values=c("TRUE"="#2a7f7f","FALSE"="#bdc3c7")) +
+      labs(x=NULL, y="AIC", title="Model Comparison — lower AIC = better fit") +
+      theme(axis.text.x=element_text(angle=35,hjust=1,size=9)) + PT
+    ggplotly(p, tooltip="text") %>% layout(showlegend=FALSE)
+  })
+
+  # ── Data table ────────────────────────────────────────────────────────────────
+  output$res_table <- renderDT({
+    r <- rv(); req(r)
+    r$states %>%
+      select(year, runoff_mm, precip_mm, Period, State, Prob_Normal) %>%
+      mutate(across(where(is.numeric), ~round(.,2))) %>%
+      rename(`Water Year`=year, `Runoff (mm)`=runoff_mm,
+             `Precip (mm)`=precip_mm, `P(Normal)`=Prob_Normal)
+  }, options=list(pageLength=15, scrollX=TRUE, dom="ftip",
+    initComplete=JS("function(s,j){$(this.api().table().header()).css({'background':'#e8f5f5','color':'#2a7f7f','font-weight':'700'});}")),
+    rownames=FALSE, class="stripe hover")
+
+  # ── Download ──────────────────────────────────────────────────────────────────
+  output$dl_csv <- downloadHandler(
+    filename = function() paste0("HydroState_",Sys.Date(),".csv"),
+    content  = function(f) { r <- rv(); req(r); write_csv(r$states, f) }
+  )
+}
+
+shinyApp(ui=ui, server=server)
